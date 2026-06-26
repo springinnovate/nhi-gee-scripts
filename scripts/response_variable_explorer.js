@@ -15,6 +15,12 @@ var GRIDMET_DROUGHT_DATASET = "GRIDMET/DROUGHT";
 var VIIRS_BURNED_AREA_DATASET = "NASA/VIIRS/002/VNP64A1";
 var JRC_MONTHLY_WATER_DATASET = "JRC/GSW1_4/MonthlyHistory";
 var MERIT_HYDRO_DATASET = "MERIT/Hydro/v1_0_1";
+var ISRIC_SOC_DATASET = "projects/soilgrids-isric/soc_mean";
+var GLDAS_DATASET = "NASA/GLDAS/V021/NOAH/G025/T3H";
+var SMAP_DATASET = "NASA/SMAP/SPL4SMGP/008";
+var MODIS_ET_DATASET = "MODIS/061/MOD16A2GF";
+var SRTM_LANDFORMS_DATASET = "CSP/ERGo/1_0/Global/SRTM_landforms";
+var ALOS_TOPO_DIVERSITY_DATASET = "CSP/ERGo/1_0/Global/ALOS_topoDiversity";
 var ERA5_START_YEAR = 1979;
 var INTERANNUAL_RAINFALL_WINDOW_YEARS = 10;
 var STREAM_UPSTREAM_AREA_THRESHOLD_KM2 = 25;
@@ -318,6 +324,39 @@ function distanceToStreams(year) {
         .multiply(ee.Image.pixelArea().sqrt());
 }
 
+function soilOrganicCarbon10cm(year) {
+    return ee.Image(ISRIC_SOC_DATASET).select("b10").divide(10);
+}
+
+function gldasAnnualSoilMoisture(year) {
+    return annualCollection(GLDAS_DATASET, year)
+        .select("SoilMoi10_40cm_inst")
+        .mean();
+}
+
+function srtmLandformType(year) {
+    return ee.Image(SRTM_LANDFORMS_DATASET).select("constant");
+}
+
+function alosTopographicDiversity(year) {
+    return ee.Image(ALOS_TOPO_DIVERSITY_DATASET).select("constant");
+}
+
+function modisAnnualEvapotranspiration(year) {
+    return scaledAnnualCollection(MODIS_ET_DATASET, year, "ET", 0.1).sum();
+}
+
+function positiveSnowDepthMean(dataset, bandName) {
+    return function (year) {
+        return annualCollection(dataset, year)
+            .select(bandName)
+            .map(function (image) {
+                return image.updateMask(image.gt(0));
+            })
+            .mean();
+    };
+}
+
 function makeLayerDefinition(name, build, defaultRange) {
     return {
         name: name,
@@ -513,6 +552,41 @@ var LAYER_DEFINITIONS = [
         "Distance to streams (m)",
         distanceToStreams,
         { min: 1, max: 5000 }
+    ),
+    makeLayerDefinition(
+        "Soil organic carbon (10 cm, g/kg)",
+        soilOrganicCarbon10cm,
+        { min: 0, max: 25 }
+    ),
+    makeLayerDefinition(
+        "Soil moisture annual mean (GLDAS 10-40 cm)",
+        gldasAnnualSoilMoisture,
+        { min: 0, max: 150 }
+    ),
+    makeLayerDefinition(
+        "Landform type (SRTM)",
+        srtmLandformType,
+        { min: 11, max: 42 }
+    ),
+    makeLayerDefinition(
+        "Topographic diversity (ALOS)",
+        alosTopographicDiversity,
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Annual evapotranspiration (MODIS ET, mm)",
+        modisAnnualEvapotranspiration,
+        { min: 0, max: 1500 }
+    ),
+    makeLayerDefinition(
+        "Average snow depth when present (GLDAS, m)",
+        positiveSnowDepthMean(GLDAS_DATASET, "SnowDepth_inst"),
+        { min: 0, max: 2 }
+    ),
+    makeLayerDefinition(
+        "Average snow depth when present (SMAP, m)",
+        positiveSnowDepthMean(SMAP_DATASET, "snow_depth"),
+        { min: 0, max: 2 }
     )
 ];
 
