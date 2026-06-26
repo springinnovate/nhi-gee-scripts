@@ -2,6 +2,14 @@ var DEFAULTYEAR = "2005";
 var SAMPLE_SCALE_METERS = 30;
 var CLEAR_LABEL = "(*clear*)";
 
+var LANDSAT_NDVI_DATASET = "LANDSAT/COMPOSITES/C02/T1_L2_8DAY_NDVI";
+var MODIS_PHENOLOGY_DATASET = "MODIS/061/MCD12Q2";
+var SHORT_VEG_HEIGHT_DATASET =
+    "projects/global-pasture-watch/assets/gsvh-30m/v1/short-veg-height_m";
+var MODIS_VEGETATION_COVER_DATASET = "MODIS/061/MOD44B";
+var MODIS_LAI_FPAR_DATASET = "MODIS/061/MOD15A2H";
+var MODIS_PRODUCTIVITY_DATASET = "MODIS/061/MOD17A3HGF";
+
 var GRASSLAND_PROB_IC = ee.ImageCollection(
     "projects/global-pasture-watch/assets/ggc-30m/v1/nat-semi-grassland_p"
 );
@@ -75,6 +83,93 @@ function probabilityIntegrityIndex() {
     return PROBABILITY_INTEGRITY_INDEX;
 }
 
+function yearStart(year) {
+    return ee.Date.fromYMD(ee.Number(year).toInt(), 1, 1);
+}
+
+function annualCollection(dataset, year) {
+    var start = yearStart(year);
+    return ee.ImageCollection(dataset).filterDate(start, start.advance(1, "year"));
+}
+
+function annualFirst(dataset, year) {
+    return annualCollection(dataset, year).first();
+}
+
+function landsatNdviPercentile(percentile) {
+    return function (year) {
+        return annualCollection(LANDSAT_NDVI_DATASET, year)
+            .select("NDVI")
+            .reduce(ee.Reducer.percentile([percentile]));
+    };
+}
+
+function modisPhenologyDayOfYear(year, bandName) {
+    var epochStart = ee.Date("1970-01-01");
+    var startDay = yearStart(year).difference(epochStart, "day");
+
+    return ee
+        .Image(annualFirst(MODIS_PHENOLOGY_DATASET, year))
+        .select(bandName)
+        .subtract(startDay);
+}
+
+function modisPhenologyBand(bandName) {
+    return function (year) {
+        return ee.Image(annualFirst(MODIS_PHENOLOGY_DATASET, year)).select(bandName);
+    };
+}
+
+function modisGrowingSeasonLength(cycleNumber) {
+    return function (year) {
+        var phenology = ee.Image(annualFirst(MODIS_PHENOLOGY_DATASET, year));
+        return phenology
+            .select("Senescence_" + cycleNumber)
+            .subtract(phenology.select("Greenup_" + cycleNumber));
+    };
+}
+
+function modisGreenupTiming(cycleNumber) {
+    return function (year) {
+        return modisPhenologyDayOfYear(year, "Greenup_" + cycleNumber);
+    };
+}
+
+function shortVegetationHeight(year) {
+    return ee
+        .Image(annualFirst(SHORT_VEG_HEIGHT_DATASET, year))
+        .select("height")
+        .multiply(0.1);
+}
+
+function modisVegetationCover(bandName) {
+    return function (year) {
+        return ee
+            .Image(annualFirst(MODIS_VEGETATION_COVER_DATASET, year))
+            .select(bandName);
+    };
+}
+
+function scaledAnnualCollection(dataset, year, bandName, scale) {
+    return annualCollection(dataset, year)
+        .select(bandName)
+        .map(function (image) {
+            return image.multiply(scale).copyProperties(image, ["system:time_start"]);
+        });
+}
+
+function annualScaledSummary(dataset, bandName, scale, reducer) {
+    return function (year) {
+        return scaledAnnualCollection(dataset, year, bandName, scale).reduce(reducer);
+    };
+}
+
+function annualScaledFirst(dataset, bandName, scale) {
+    return function (year) {
+        return ee.Image(annualFirst(dataset, year)).select(bandName).multiply(scale);
+    };
+}
+
 function makeLayerDefinition(name, build, defaultRange) {
     return {
         name: name,
@@ -90,6 +185,121 @@ var LAYER_DEFINITIONS = [
         "Grassland Reference Sites",
         probabilityIntegrityIndex,
         { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "NDVI 95th percentile across the year",
+        landsatNdviPercentile(95),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "NDVI 50th percentile across the year",
+        landsatNdviPercentile(50),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Length of growing season 1",
+        modisGrowingSeasonLength(1),
+        { min: 0, max: 250 }
+    ),
+    makeLayerDefinition(
+        "Length of growing season 2",
+        modisGrowingSeasonLength(2),
+        { min: 0, max: 250 }
+    ),
+    makeLayerDefinition(
+        "Timing of green up 1",
+        modisGreenupTiming(1),
+        { min: 1, max: 365 }
+    ),
+    makeLayerDefinition(
+        "Timing of green up 2",
+        modisGreenupTiming(2),
+        { min: 1, max: 365 }
+    ),
+    makeLayerDefinition(
+        "Short vegetation height",
+        shortVegetationHeight,
+        { min: 0, max: 3 }
+    ),
+    makeLayerDefinition(
+        "Percent tree cover",
+        modisVegetationCover("Percent_Tree_Cover"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Percent veg, but not tree cover",
+        modisVegetationCover("Percent_NonTree_Vegetation"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Percent bare",
+        modisVegetationCover("Percent_NonVegetated"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Leaf Area Index (LAI) annual max",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Lai_500m",
+            0.1,
+            ee.Reducer.max()
+        ),
+        { min: 0, max: 8 }
+    ),
+    makeLayerDefinition(
+        "Leaf Area Index (LAI) annual SD",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Lai_500m",
+            0.1,
+            ee.Reducer.stdDev()
+        ),
+        { min: 0, max: 2 }
+    ),
+    makeLayerDefinition(
+        "Fraction of Photosynthetically Active Radiation (FPAR) annual mean",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Fpar_500m",
+            0.01,
+            ee.Reducer.mean()
+        ),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Fraction of Photosynthetically Active Radiation (FPAR) annual SD",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Fpar_500m",
+            0.01,
+            ee.Reducer.stdDev()
+        ),
+        { min: 0, max: 0.4 }
+    ),
+    makeLayerDefinition(
+        "FPAR Variability max",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "FparStdDev_500m",
+            0.01,
+            ee.Reducer.max()
+        ),
+        { min: 0, max: 0.4 }
+    ),
+    makeLayerDefinition(
+        "Number of growing seasons",
+        modisPhenologyBand("NumCycles"),
+        { min: 0, max: 7 }
+    ),
+    makeLayerDefinition(
+        "NPP",
+        annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Npp", 0.0001),
+        { min: 0, max: 2 }
+    ),
+    makeLayerDefinition(
+        "GPP",
+        annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Gpp", 0.0001),
+        { min: 0, max: 4 }
     )
 ];
 
