@@ -1,11 +1,5 @@
-var CONFIG = {
-  minYear: 1984,
-  maxYear: new Date().getFullYear(),
-  defaultYear: 2024
-};
-
 var state = {
-  year: CONFIG.defaultYear
+  year: 2024
 };
 
 function parseYear(value) {
@@ -16,10 +10,6 @@ function parseYear(value) {
   }
 
   var year = parseInt(normalizedValue, 10);
-
-  if (year < CONFIG.minYear || year > CONFIG.maxYear) {
-    return null;
-  }
 
   return year;
 }
@@ -49,13 +39,7 @@ function handleYearChange(value) {
   var year = parseYear(value);
 
   if (year === null) {
-    statusLabel.setValue(
-      'Enter a four-digit year from ' +
-      CONFIG.minYear +
-      ' through ' +
-      CONFIG.maxYear +
-      '.'
-    );
+    statusLabel.setValue('Enter a four-digit year.');
     return;
   }
 
