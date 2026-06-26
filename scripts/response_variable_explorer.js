@@ -1,12 +1,3 @@
-/**** Start of imports. If edited, may not auto-convert in the playground. ****/
-/***** End of imports. *****/
-
-// Response Variable Explorer
-//
-// Initial Google Earth Engine Code Editor scaffold for exploring annual
-// response-variable summaries. Future iterations can add dataset selection,
-// reducer rules such as annual 95th percentile, and map/export outputs.
-
 var CONFIG = {
   minYear: 1984,
   maxYear: new Date().getFullYear(),
