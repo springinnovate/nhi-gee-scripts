@@ -28,7 +28,7 @@ var STREAM_UPSTREAM_AREA_THRESHOLD_KM2 = 25;
 var REGION_DEFINITIONS = [
     {
         name: "Wyoming Basin",
-        assetId: "projects/ecoshard-202922/assets/wyoming_basin2"
+        assetId: "projects/ecoshard-202922/assets/nhi_assets/wyoming_basin2"
     }
 ];
 
@@ -679,14 +679,14 @@ function regionGeometry(regionDefinition) {
 
 function regionOutline(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).style({
-        color: "111111",
+        color: "ffff00",
         fillColor: "00000000",
-        width: 2
+        width: 5
     });
 }
 
-function referenceSitesLayer() {
-    return probabilityIntegrityIndex().eq(1).selfMask();
+function referenceSitesLayer(region) {
+    return probabilityIntegrityIndex().eq(1).selfMask().clip(region);
 }
 
 function slug(text) {
@@ -835,7 +835,7 @@ function updateMapLayers() {
     var region = regionGeometry(regionDefinition);
     map.layers().reset([
         ui.Map.Layer(
-            referenceSitesLayer(),
+            referenceSitesLayer(region),
             { palette: ["003a70"], min: 1, max: 1 },
             "Grassland Reference Sites"
         ),
