@@ -12,8 +12,12 @@ var MODIS_PRODUCTIVITY_DATASET = "MODIS/061/MOD17A3HGF";
 var ERA5_DAILY_DATASET = "ECMWF/ERA5/DAILY";
 var ERA5_MONTHLY_DATASET = "ECMWF/ERA5/MONTHLY";
 var GRIDMET_DROUGHT_DATASET = "GRIDMET/DROUGHT";
+var VIIRS_BURNED_AREA_DATASET = "NASA/VIIRS/002/VNP64A1";
+var JRC_MONTHLY_WATER_DATASET = "JRC/GSW1_4/MonthlyHistory";
+var MERIT_HYDRO_DATASET = "MERIT/Hydro/v1_0_1";
 var ERA5_START_YEAR = 1979;
 var INTERANNUAL_RAINFALL_WINDOW_YEARS = 10;
+var STREAM_UPSTREAM_AREA_THRESHOLD_KM2 = 25;
 
 var GRASSLAND_PROB_IC = ee.ImageCollection(
     "projects/global-pasture-watch/assets/ggc-30m/v1/nat-semi-grassland_p"
@@ -283,6 +287,37 @@ function gridmetDroughtFifthPercentile(year) {
         .reduce(ee.Reducer.percentile([5]));
 }
 
+function fireBurnedMonthCount(year) {
+    return annualCollection(VIIRS_BURNED_AREA_DATASET, year)
+        .select("Burn_Date")
+        .map(function (image) {
+            return image.gt(0).unmask(0);
+        })
+        .sum();
+}
+
+function waterPresenceAnnualVariation(year) {
+    return annualCollection(JRC_MONTHLY_WATER_DATASET, year)
+        .select("water")
+        .map(function (image) {
+            return image.eq(2).updateMask(image.neq(0));
+        })
+        .reduce(ee.Reducer.stdDev());
+}
+
+function distanceToStreams(year) {
+    var streams = ee
+        .Image(MERIT_HYDRO_DATASET)
+        .select("upa")
+        .gte(STREAM_UPSTREAM_AREA_THRESHOLD_KM2)
+        .unmask(0);
+
+    return streams
+        .fastDistanceTransform()
+        .sqrt()
+        .multiply(ee.Image.pixelArea().sqrt());
+}
+
 function makeLayerDefinition(name, build, defaultRange) {
     return {
         name: name,
@@ -463,6 +498,21 @@ var LAYER_DEFINITIONS = [
         "Drought 5th percentile (SPI 30-day)",
         gridmetDroughtFifthPercentile,
         { min: -3, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Fire frequency (burned months in selected year)",
+        fireBurnedMonthCount,
+        { min: 0, max: 12 }
+    ),
+    makeLayerDefinition(
+        "Annual variation in water presence",
+        waterPresenceAnnualVariation,
+        { min: 0, max: 0.5 }
+    ),
+    makeLayerDefinition(
+        "Distance to streams (m)",
+        distanceToStreams,
+        { min: 1, max: 5000 }
     )
 ];
 
