@@ -25,15 +25,10 @@ var ERA5_START_YEAR = 1979;
 var INTERANNUAL_RAINFALL_WINDOW_YEARS = 10;
 var STREAM_UPSTREAM_AREA_THRESHOLD_KM2 = 25;
 
-// Replace these asset IDs with uploaded region FeatureCollection assets.
 var REGION_DEFINITIONS = [
     {
-        name: "Placeholder Region 1",
-        assetId: "users/your_username/regions/placeholder_region_1"
-    },
-    {
-        name: "Placeholder Region 2",
-        assetId: "users/your_username/regions/placeholder_region_2"
+        name: "Wyoming Basin",
+        assetId: "projects/ecoshard-202922/assets/nhi_assets/wyoming_basin2"
     }
 ];
 
@@ -682,6 +677,18 @@ function regionGeometry(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).geometry();
 }
 
+function regionOutline(regionDefinition) {
+    return ee.FeatureCollection(regionDefinition.assetId).style({
+        color: "ffff00",
+        fillColor: "00000000",
+        width: 5
+    });
+}
+
+function referenceSitesLayer(region) {
+    return probabilityIntegrityIndex().eq(1).selfMask().clip(region);
+}
+
 function slug(text) {
     return text
         .toLowerCase()
@@ -720,6 +727,9 @@ var driveFolderInput = ui.Textbox({
 var regionSelect = ui.Select({
     items: regionNames(),
     value: REGION_DEFINITIONS[0].name,
+    onChange: function () {
+        updateMapLayers();
+    },
     style: { width: "260px" }
 });
 
@@ -815,6 +825,25 @@ function queueDriveExports() {
     );
 }
 
+var map = ui.Map();
+map.setOptions("HYBRID");
+map.style().set("stretch", "both");
+map.setControlVisibility({ mapTypeControl: true });
+
+function updateMapLayers() {
+    var regionDefinition = regionDefinitionByName(regionSelect.getValue());
+    var region = regionGeometry(regionDefinition);
+    map.layers().reset([
+        ui.Map.Layer(
+            referenceSitesLayer(region),
+            { palette: ["003a70"], min: 1, max: 1 },
+            "Grassland Reference Sites"
+        ),
+        ui.Map.Layer(regionOutline(regionDefinition), {}, regionDefinition.name)
+    ]);
+    map.centerObject(region, 7);
+}
+
 controlPanel.add(title);
 controlPanel.add(fieldRow("Year", yearInput));
 controlPanel.add(fieldRow("Region", regionSelect));
@@ -856,4 +885,12 @@ controlPanel.add(
 controlPanel.add(layerList);
 controlPanel.add(statusLabel);
 
-ui.root.widgets().reset([controlPanel]);
+ui.root.widgets().reset([
+    ui.SplitPanel({
+        firstPanel: controlPanel,
+        secondPanel: map,
+        orientation: "horizontal",
+        style: { stretch: "both" }
+    })
+]);
+updateMapLayers();
