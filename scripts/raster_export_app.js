@@ -686,7 +686,7 @@ function regionOutline(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).style({
         color: "ffff00",
         fillColor: "00000000",
-        width: 5
+        width: 2
     });
 }
 
@@ -875,7 +875,7 @@ function updateMapLayers() {
     map.layers().reset([
         ui.Map.Layer(
             referenceSitesLayer(region, thresholds),
-            { palette: ["003a70"], min: 1, max: 1 },
+            { palette: ["ff2db2"], min: 1, max: 1 },
             "Grassland Reference Sites"
         ),
         ui.Map.Layer(regionOutline(regionDefinition), {}, regionDefinition.name)
