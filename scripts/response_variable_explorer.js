@@ -2,6 +2,19 @@ var DEFAULTYEAR = "2005";
 var SAMPLE_SCALE_METERS = 30;
 var CLEAR_LABEL = "(*clear*)";
 
+var LANDSAT_NDVI_DATASET = "LANDSAT/COMPOSITES/C02/T1_L2_8DAY_NDVI";
+var MODIS_PHENOLOGY_DATASET = "MODIS/061/MCD12Q2";
+var SHORT_VEG_HEIGHT_DATASET =
+    "projects/global-pasture-watch/assets/gsvh-30m/v1/short-veg-height_m";
+var MODIS_VEGETATION_COVER_DATASET = "MODIS/061/MOD44B";
+var MODIS_LAI_FPAR_DATASET = "MODIS/061/MOD15A2H";
+var MODIS_PRODUCTIVITY_DATASET = "MODIS/061/MOD17A3HGF";
+var ERA5_DAILY_DATASET = "ECMWF/ERA5/DAILY";
+var ERA5_MONTHLY_DATASET = "ECMWF/ERA5/MONTHLY";
+var GRIDMET_DROUGHT_DATASET = "GRIDMET/DROUGHT";
+var ERA5_START_YEAR = 1979;
+var INTERANNUAL_RAINFALL_WINDOW_YEARS = 10;
+
 var GRASSLAND_PROB_IC = ee.ImageCollection(
     "projects/global-pasture-watch/assets/ggc-30m/v1/nat-semi-grassland_p"
 );
@@ -75,6 +88,201 @@ function probabilityIntegrityIndex() {
     return PROBABILITY_INTEGRITY_INDEX;
 }
 
+function yearStart(year) {
+    return ee.Date.fromYMD(ee.Number(year).toInt(), 1, 1);
+}
+
+function annualCollection(dataset, year) {
+    var start = yearStart(year);
+    return ee.ImageCollection(dataset).filterDate(start, start.advance(1, "year"));
+}
+
+function annualFirst(dataset, year) {
+    return annualCollection(dataset, year).first();
+}
+
+function landsatNdviPercentile(percentile) {
+    return function (year) {
+        return annualCollection(LANDSAT_NDVI_DATASET, year)
+            .select("NDVI")
+            .reduce(ee.Reducer.percentile([percentile]));
+    };
+}
+
+function modisPhenologyDayOfYear(year, bandName) {
+    var epochStart = ee.Date("1970-01-01");
+    var startDay = yearStart(year).difference(epochStart, "day");
+
+    return ee
+        .Image(annualFirst(MODIS_PHENOLOGY_DATASET, year))
+        .select(bandName)
+        .subtract(startDay);
+}
+
+function modisPhenologyBand(bandName) {
+    return function (year) {
+        return ee.Image(annualFirst(MODIS_PHENOLOGY_DATASET, year)).select(bandName);
+    };
+}
+
+function modisGrowingSeasonLength(cycleNumber) {
+    return function (year) {
+        var phenology = ee.Image(annualFirst(MODIS_PHENOLOGY_DATASET, year));
+        return phenology
+            .select("Senescence_" + cycleNumber)
+            .subtract(phenology.select("Greenup_" + cycleNumber));
+    };
+}
+
+function modisGreenupTiming(cycleNumber) {
+    return function (year) {
+        return modisPhenologyDayOfYear(year, "Greenup_" + cycleNumber);
+    };
+}
+
+function shortVegetationHeight(year) {
+    return ee
+        .Image(annualFirst(SHORT_VEG_HEIGHT_DATASET, year))
+        .select("height")
+        .multiply(0.1);
+}
+
+function modisVegetationCover(bandName) {
+    return function (year) {
+        return ee
+            .Image(annualFirst(MODIS_VEGETATION_COVER_DATASET, year))
+            .select(bandName);
+    };
+}
+
+function scaledAnnualCollection(dataset, year, bandName, scale) {
+    return annualCollection(dataset, year)
+        .select(bandName)
+        .map(function (image) {
+            return image.multiply(scale).copyProperties(image, ["system:time_start"]);
+        });
+}
+
+function annualScaledSummary(dataset, bandName, scale, reducer) {
+    return function (year) {
+        return scaledAnnualCollection(dataset, year, bandName, scale).reduce(reducer);
+    };
+}
+
+function annualScaledFirst(dataset, bandName, scale) {
+    return function (year) {
+        return ee.Image(annualFirst(dataset, year)).select(bandName).multiply(scale);
+    };
+}
+
+function toCelsius(image) {
+    return image.subtract(273.15);
+}
+
+function toMillimeters(image) {
+    return image.multiply(1000);
+}
+
+function era5DailyForYear(year) {
+    return annualCollection(ERA5_DAILY_DATASET, year);
+}
+
+function era5MonthlyForYear(year) {
+    return annualCollection(ERA5_MONTHLY_DATASET, year);
+}
+
+function annualMaxTemperatureForYear(year) {
+    return toCelsius(
+        era5DailyForYear(year).select("maximum_2m_air_temperature").max()
+    );
+}
+
+function annualMeanTemperatureForYear(year) {
+    return toCelsius(
+        era5MonthlyForYear(year).select("mean_2m_air_temperature").mean()
+    );
+}
+
+function annualMedianTemperatureForYear(year) {
+    return toCelsius(
+        era5MonthlyForYear(year).select("mean_2m_air_temperature").median()
+    );
+}
+
+function annualMinTemperatureForYear(year) {
+    return toCelsius(
+        era5DailyForYear(year).select("minimum_2m_air_temperature").min()
+    );
+}
+
+function annualPrecipForYear(year) {
+    return toMillimeters(
+        era5DailyForYear(year).select("total_precipitation").sum()
+    );
+}
+
+function growingSeasonDailyForYear(year) {
+    var epochStart = ee.Date("1970-01-01");
+    var phenology = ee.Image(annualFirst(MODIS_PHENOLOGY_DATASET, year));
+    var greenup = phenology.select("Greenup_1");
+    var senescence = phenology.select("Senescence_1");
+
+    return era5DailyForYear(year).map(function (image) {
+        var imageDay = ee.Date(image.get("system:time_start")).difference(
+            epochStart,
+            "day"
+        );
+        var growingSeasonMask = ee
+            .Image.constant(imageDay)
+            .gte(greenup)
+            .and(ee.Image.constant(imageDay).lte(senescence));
+
+        return image.updateMask(growingSeasonMask);
+    });
+}
+
+function growingSeasonAverageTemperatureForYear(year) {
+    return toCelsius(
+        growingSeasonDailyForYear(year)
+            .select("mean_2m_air_temperature")
+            .mean()
+    );
+}
+
+function growingSeasonAveragePrecipitationForYear(year) {
+    return toMillimeters(
+        growingSeasonDailyForYear(year).select("total_precipitation").mean()
+    );
+}
+
+function interannualRainfallVariability(endYear) {
+    var startYear = ee
+        .Number(endYear)
+        .subtract(INTERANNUAL_RAINFALL_WINDOW_YEARS - 1)
+        .max(ERA5_START_YEAR)
+        .toInt();
+    var years = ee.List.sequence(startYear, endYear);
+    var annualTotals = ee.ImageCollection.fromImages(
+        years.map(function (year) {
+            return annualPrecipForYear(year);
+        })
+    );
+    var mean = annualTotals.mean();
+    var stdDev = annualTotals.reduce(ee.Reducer.stdDev());
+
+    return stdDev.divide(mean).multiply(100).updateMask(mean.neq(0));
+}
+
+function gridmetDroughtMean(year) {
+    return annualCollection(GRIDMET_DROUGHT_DATASET, year).select("spi30d").mean();
+}
+
+function gridmetDroughtFifthPercentile(year) {
+    return annualCollection(GRIDMET_DROUGHT_DATASET, year)
+        .select("spi30d")
+        .reduce(ee.Reducer.percentile([5]));
+}
+
 function makeLayerDefinition(name, build, defaultRange) {
     return {
         name: name,
@@ -90,6 +298,171 @@ var LAYER_DEFINITIONS = [
         "Grassland Reference Sites",
         probabilityIntegrityIndex,
         { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "NDVI 95th percentile across the year",
+        landsatNdviPercentile(95),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "NDVI 50th percentile across the year",
+        landsatNdviPercentile(50),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Length of growing season 1",
+        modisGrowingSeasonLength(1),
+        { min: 0, max: 250 }
+    ),
+    makeLayerDefinition(
+        "Length of growing season 2",
+        modisGrowingSeasonLength(2),
+        { min: 0, max: 250 }
+    ),
+    makeLayerDefinition(
+        "Timing of green up 1",
+        modisGreenupTiming(1),
+        { min: 1, max: 365 }
+    ),
+    makeLayerDefinition(
+        "Timing of green up 2",
+        modisGreenupTiming(2),
+        { min: 1, max: 365 }
+    ),
+    makeLayerDefinition(
+        "Short vegetation height",
+        shortVegetationHeight,
+        { min: 0, max: 3 }
+    ),
+    makeLayerDefinition(
+        "Percent tree cover",
+        modisVegetationCover("Percent_Tree_Cover"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Percent veg, but not tree cover",
+        modisVegetationCover("Percent_NonTree_Vegetation"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Percent bare",
+        modisVegetationCover("Percent_NonVegetated"),
+        { min: 0, max: 100 }
+    ),
+    makeLayerDefinition(
+        "Leaf Area Index (LAI) annual max",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Lai_500m",
+            0.1,
+            ee.Reducer.max()
+        ),
+        { min: 0, max: 8 }
+    ),
+    makeLayerDefinition(
+        "Leaf Area Index (LAI) annual SD",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Lai_500m",
+            0.1,
+            ee.Reducer.stdDev()
+        ),
+        { min: 0, max: 2 }
+    ),
+    makeLayerDefinition(
+        "Fraction of Photosynthetically Active Radiation (FPAR) annual mean",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Fpar_500m",
+            0.01,
+            ee.Reducer.mean()
+        ),
+        { min: 0, max: 1 }
+    ),
+    makeLayerDefinition(
+        "Fraction of Photosynthetically Active Radiation (FPAR) annual SD",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "Fpar_500m",
+            0.01,
+            ee.Reducer.stdDev()
+        ),
+        { min: 0, max: 0.4 }
+    ),
+    makeLayerDefinition(
+        "FPAR Variability max",
+        annualScaledSummary(
+            MODIS_LAI_FPAR_DATASET,
+            "FparStdDev_500m",
+            0.01,
+            ee.Reducer.max()
+        ),
+        { min: 0, max: 0.4 }
+    ),
+    makeLayerDefinition(
+        "Number of growing seasons",
+        modisPhenologyBand("NumCycles"),
+        { min: 0, max: 7 }
+    ),
+    makeLayerDefinition(
+        "NPP",
+        annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Npp", 0.0001),
+        { min: 0, max: 2 }
+    ),
+    makeLayerDefinition(
+        "GPP",
+        annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Gpp", 0.0001),
+        { min: 0, max: 4 }
+    ),
+    makeLayerDefinition(
+        "Maximum annual temperature (C)",
+        annualMaxTemperatureForYear,
+        { min: 0, max: 45 }
+    ),
+    makeLayerDefinition(
+        "Mean annual temperature (C)",
+        annualMeanTemperatureForYear,
+        { min: -20, max: 30 }
+    ),
+    makeLayerDefinition(
+        "Median annual temperature (C)",
+        annualMedianTemperatureForYear,
+        { min: -20, max: 30 }
+    ),
+    makeLayerDefinition(
+        "Minimum annual temperature (C)",
+        annualMinTemperatureForYear,
+        { min: -40, max: 20 }
+    ),
+    makeLayerDefinition(
+        "Annual precipitation (mm)",
+        annualPrecipForYear,
+        { min: 0, max: 3000 }
+    ),
+    makeLayerDefinition(
+        "Growing season avg temp (C)",
+        growingSeasonAverageTemperatureForYear,
+        { min: 0, max: 30 }
+    ),
+    makeLayerDefinition(
+        "Growing season avg precipitation (mm/day)",
+        growingSeasonAveragePrecipitationForYear,
+        { min: 0, max: 10 }
+    ),
+    makeLayerDefinition(
+        "Interannual rainfall variability (CV%, 10-year)",
+        interannualRainfallVariability,
+        { min: 0, max: 50 }
+    ),
+    makeLayerDefinition(
+        "Drought mean (SPI 30-day)",
+        gridmetDroughtMean,
+        { min: -2, max: 2 }
+    ),
+    makeLayerDefinition(
+        "Drought 5th percentile (SPI 30-day)",
+        gridmetDroughtFifthPercentile,
+        { min: -3, max: 1 }
     )
 ];
 
