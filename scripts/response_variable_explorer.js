@@ -40,6 +40,29 @@ var PROBABILITY_INTEGRITY_END_YEAR = 2020;
 var GRASSLAND_PROB_THRESHOLD = 60;
 var HMI_THRESHOLD = 0.1;
 var HII_THRESHOLD = 0.08;
+var DEFAULT_YEAR_PROMPT = "Select a layer to see year range";
+
+function yearRangePrompt(startYear, endYear) {
+    return "Select a year between " + startYear + "-" + endYear;
+}
+
+var YEAR_PROMPT_GRASSLAND_REFERENCE =
+    "Reference period 2001-2020; year is ignored";
+var YEAR_PROMPT_STATIC = "Static layer; year is ignored";
+var YEAR_PROMPT_LANDSAT = yearRangePrompt(1984, 2026);
+var YEAR_PROMPT_MODIS_PHENOLOGY = yearRangePrompt(2001, 2024);
+var YEAR_PROMPT_SHORT_VEG_HEIGHT = yearRangePrompt(2000, 2022);
+var YEAR_PROMPT_MODIS_COVER = yearRangePrompt(2000, 2024);
+var YEAR_PROMPT_MODIS_LAI_FPAR = yearRangePrompt(2000, 2026);
+var YEAR_PROMPT_MODIS_PRODUCTIVITY = yearRangePrompt(2001, 2024);
+var YEAR_PROMPT_ERA5_COMPLETE_YEARS = yearRangePrompt(1979, 2019);
+var YEAR_PROMPT_GROWING_SEASON_CLIMATE = yearRangePrompt(2001, 2019);
+var YEAR_PROMPT_GRIDMET_DROUGHT = yearRangePrompt(1980, 2025);
+var YEAR_PROMPT_VIIRS_FIRE = yearRangePrompt(2012, 2026);
+var YEAR_PROMPT_JRC_WATER = yearRangePrompt(1984, 2021);
+var YEAR_PROMPT_GLDAS = yearRangePrompt(2000, 2026);
+var YEAR_PROMPT_MODIS_ET = yearRangePrompt(2000, 2025);
+var YEAR_PROMPT_SMAP = yearRangePrompt(2015, 2026);
 
 function noTwoConsecutiveZerosFromAnnualBinary(buildAnnualBinary) {
     var years = ee.List.sequence(
@@ -357,13 +380,14 @@ function positiveSnowDepthMean(dataset, bandName) {
     };
 }
 
-function makeLayerDefinition(name, build, defaultRange) {
+function makeLayerDefinition(name, build, defaultRange, yearPrompt) {
     return {
         name: name,
         build: function (year) {
             return ee.Image(build(year)).rename("B0");
         },
-        defaultRange: defaultRange
+        defaultRange: defaultRange,
+        yearPrompt: yearPrompt
     };
 }
 
@@ -371,57 +395,68 @@ var LAYER_DEFINITIONS = [
     makeLayerDefinition(
         "Grassland Reference Sites",
         probabilityIntegrityIndex,
-        { min: 0, max: 1 }
+        { min: 0, max: 1 },
+        YEAR_PROMPT_GRASSLAND_REFERENCE
     ),
     makeLayerDefinition(
         "NDVI 95th percentile across the year",
         landsatNdviPercentile(95),
-        { min: 0, max: 1 }
+        { min: 0, max: 1 },
+        YEAR_PROMPT_LANDSAT
     ),
     makeLayerDefinition(
         "NDVI 50th percentile across the year",
         landsatNdviPercentile(50),
-        { min: 0, max: 1 }
+        { min: 0, max: 1 },
+        YEAR_PROMPT_LANDSAT
     ),
     makeLayerDefinition(
         "Length of growing season 1",
         modisGrowingSeasonLength(1),
-        { min: 0, max: 250 }
+        { min: 0, max: 250 },
+        YEAR_PROMPT_MODIS_PHENOLOGY
     ),
     makeLayerDefinition(
         "Length of growing season 2",
         modisGrowingSeasonLength(2),
-        { min: 0, max: 250 }
+        { min: 0, max: 250 },
+        YEAR_PROMPT_MODIS_PHENOLOGY
     ),
     makeLayerDefinition(
         "Timing of green up 1",
         modisGreenupTiming(1),
-        { min: 1, max: 365 }
+        { min: 1, max: 365 },
+        YEAR_PROMPT_MODIS_PHENOLOGY
     ),
     makeLayerDefinition(
         "Timing of green up 2",
         modisGreenupTiming(2),
-        { min: 1, max: 365 }
+        { min: 1, max: 365 },
+        YEAR_PROMPT_MODIS_PHENOLOGY
     ),
     makeLayerDefinition(
         "Short vegetation height",
         shortVegetationHeight,
-        { min: 0, max: 3 }
+        { min: 0, max: 3 },
+        YEAR_PROMPT_SHORT_VEG_HEIGHT
     ),
     makeLayerDefinition(
         "Percent tree cover",
         modisVegetationCover("Percent_Tree_Cover"),
-        { min: 0, max: 100 }
+        { min: 0, max: 100 },
+        YEAR_PROMPT_MODIS_COVER
     ),
     makeLayerDefinition(
         "Percent veg, but not tree cover",
         modisVegetationCover("Percent_NonTree_Vegetation"),
-        { min: 0, max: 100 }
+        { min: 0, max: 100 },
+        YEAR_PROMPT_MODIS_COVER
     ),
     makeLayerDefinition(
         "Percent bare",
         modisVegetationCover("Percent_NonVegetated"),
-        { min: 0, max: 100 }
+        { min: 0, max: 100 },
+        YEAR_PROMPT_MODIS_COVER
     ),
     makeLayerDefinition(
         "Leaf Area Index (LAI) annual max",
@@ -431,7 +466,8 @@ var LAYER_DEFINITIONS = [
             0.1,
             ee.Reducer.max()
         ),
-        { min: 0, max: 8 }
+        { min: 0, max: 8 },
+        YEAR_PROMPT_MODIS_LAI_FPAR
     ),
     makeLayerDefinition(
         "Leaf Area Index (LAI) annual SD",
@@ -441,7 +477,8 @@ var LAYER_DEFINITIONS = [
             0.1,
             ee.Reducer.stdDev()
         ),
-        { min: 0, max: 2 }
+        { min: 0, max: 2 },
+        YEAR_PROMPT_MODIS_LAI_FPAR
     ),
     makeLayerDefinition(
         "Fraction of Photosynthetically Active Radiation (FPAR) annual mean",
@@ -451,7 +488,8 @@ var LAYER_DEFINITIONS = [
             0.01,
             ee.Reducer.mean()
         ),
-        { min: 0, max: 1 }
+        { min: 0, max: 1 },
+        YEAR_PROMPT_MODIS_LAI_FPAR
     ),
     makeLayerDefinition(
         "Fraction of Photosynthetically Active Radiation (FPAR) annual SD",
@@ -461,7 +499,8 @@ var LAYER_DEFINITIONS = [
             0.01,
             ee.Reducer.stdDev()
         ),
-        { min: 0, max: 0.4 }
+        { min: 0, max: 0.4 },
+        YEAR_PROMPT_MODIS_LAI_FPAR
     ),
     makeLayerDefinition(
         "FPAR Variability max",
@@ -471,122 +510,146 @@ var LAYER_DEFINITIONS = [
             0.01,
             ee.Reducer.max()
         ),
-        { min: 0, max: 0.4 }
+        { min: 0, max: 0.4 },
+        YEAR_PROMPT_MODIS_LAI_FPAR
     ),
     makeLayerDefinition(
         "Number of growing seasons",
         modisPhenologyBand("NumCycles"),
-        { min: 0, max: 7 }
+        { min: 0, max: 7 },
+        YEAR_PROMPT_MODIS_PHENOLOGY
     ),
     makeLayerDefinition(
         "NPP",
         annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Npp", 0.0001),
-        { min: 0, max: 2 }
+        { min: 0, max: 2 },
+        YEAR_PROMPT_MODIS_PRODUCTIVITY
     ),
     makeLayerDefinition(
         "GPP",
         annualScaledFirst(MODIS_PRODUCTIVITY_DATASET, "Gpp", 0.0001),
-        { min: 0, max: 4 }
+        { min: 0, max: 4 },
+        YEAR_PROMPT_MODIS_PRODUCTIVITY
     ),
     makeLayerDefinition(
         "Maximum annual temperature (C)",
         annualMaxTemperatureForYear,
-        { min: 0, max: 45 }
+        { min: 0, max: 45 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Mean annual temperature (C)",
         annualMeanTemperatureForYear,
-        { min: -20, max: 30 }
+        { min: -20, max: 30 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Median annual temperature (C)",
         annualMedianTemperatureForYear,
-        { min: -20, max: 30 }
+        { min: -20, max: 30 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Minimum annual temperature (C)",
         annualMinTemperatureForYear,
-        { min: -40, max: 20 }
+        { min: -40, max: 20 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Annual precipitation (mm)",
         annualPrecipForYear,
-        { min: 0, max: 3000 }
+        { min: 0, max: 3000 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Growing season avg temp (C)",
         growingSeasonAverageTemperatureForYear,
-        { min: 0, max: 30 }
+        { min: 0, max: 30 },
+        YEAR_PROMPT_GROWING_SEASON_CLIMATE
     ),
     makeLayerDefinition(
         "Growing season avg precipitation (mm/day)",
         growingSeasonAveragePrecipitationForYear,
-        { min: 0, max: 10 }
+        { min: 0, max: 10 },
+        YEAR_PROMPT_GROWING_SEASON_CLIMATE
     ),
     makeLayerDefinition(
         "Interannual rainfall variability (CV%, 10-year)",
         interannualRainfallVariability,
-        { min: 0, max: 50 }
+        { min: 0, max: 50 },
+        YEAR_PROMPT_ERA5_COMPLETE_YEARS
     ),
     makeLayerDefinition(
         "Drought mean (SPI 30-day)",
         gridmetDroughtMean,
-        { min: -2, max: 2 }
+        { min: -2, max: 2 },
+        YEAR_PROMPT_GRIDMET_DROUGHT
     ),
     makeLayerDefinition(
         "Drought 5th percentile (SPI 30-day)",
         gridmetDroughtFifthPercentile,
-        { min: -3, max: 1 }
+        { min: -3, max: 1 },
+        YEAR_PROMPT_GRIDMET_DROUGHT
     ),
     makeLayerDefinition(
         "Fire frequency (burned months in selected year)",
         fireBurnedMonthCount,
-        { min: 0, max: 12 }
+        { min: 0, max: 12 },
+        YEAR_PROMPT_VIIRS_FIRE
     ),
     makeLayerDefinition(
         "Annual variation in water presence",
         waterPresenceAnnualVariation,
-        { min: 0, max: 0.5 }
+        { min: 0, max: 0.5 },
+        YEAR_PROMPT_JRC_WATER
     ),
     makeLayerDefinition(
         "Distance to streams (m)",
         distanceToStreams,
-        { min: 1, max: 5000 }
+        { min: 1, max: 5000 },
+        YEAR_PROMPT_STATIC
     ),
     makeLayerDefinition(
         "Soil organic carbon (10 cm, g/kg)",
         soilOrganicCarbon10cm,
-        { min: 0, max: 25 }
+        { min: 0, max: 25 },
+        YEAR_PROMPT_STATIC
     ),
     makeLayerDefinition(
         "Soil moisture annual mean (GLDAS 10-40 cm)",
         gldasAnnualSoilMoisture,
-        { min: 0, max: 150 }
+        { min: 0, max: 150 },
+        YEAR_PROMPT_GLDAS
     ),
     makeLayerDefinition(
         "Landform type (SRTM)",
         srtmLandformType,
-        { min: 11, max: 42 }
+        { min: 11, max: 42 },
+        YEAR_PROMPT_STATIC
     ),
     makeLayerDefinition(
         "Topographic diversity (ALOS)",
         alosTopographicDiversity,
-        { min: 0, max: 1 }
+        { min: 0, max: 1 },
+        YEAR_PROMPT_STATIC
     ),
     makeLayerDefinition(
         "Annual evapotranspiration (MODIS ET, mm)",
         modisAnnualEvapotranspiration,
-        { min: 0, max: 1500 }
+        { min: 0, max: 1500 },
+        YEAR_PROMPT_MODIS_ET
     ),
     makeLayerDefinition(
         "Average snow depth when present (GLDAS, m)",
         positiveSnowDepthMean(GLDAS_DATASET, "SnowDepth_inst"),
-        { min: 0, max: 2 }
+        { min: 0, max: 2 },
+        YEAR_PROMPT_GLDAS
     ),
     makeLayerDefinition(
         "Average snow depth when present (SMAP, m)",
         positiveSnowDepthMean(SMAP_DATASET, "snow_depth"),
-        { min: 0, max: 2 }
+        { min: 0, max: 2 },
+        YEAR_PROMPT_SMAP
     )
 ];
 
@@ -795,6 +858,7 @@ var panel_list = [];
         active_context.raster = null;
         active_context.datasetName = null;
         active_context.activeLayerDefinition = null;
+        year_label.setValue(DEFAULT_YEAR_PROMPT);
         min_val.setValue("n/a", false);
         max_val.setValue("n/a", false);
         min_val.setDisabled(true);
@@ -812,6 +876,7 @@ var panel_list = [];
         }
 
         var layerDefinition = layerDefinitionByName(layerName);
+        year_label.setValue(layerDefinition.yearPrompt);
         var image = getCachedLayer(
             active_context,
             layerDefinition,
@@ -900,6 +965,11 @@ var panel_list = [];
         }
     });
 
+    var year_label = ui.Label({
+        value: DEFAULT_YEAR_PROMPT,
+        style: { backgroundColor: "rgba(0, 0, 0, 0)" }
+    });
+
     var min_val = ui.Textbox({
         value: "n/a",
         onChange: function (value) {
@@ -945,12 +1015,7 @@ var panel_list = [];
         );
     });
 
-    panel.add(
-        ui.Label({
-            value: "Current Year",
-            style: { backgroundColor: "rgba(0, 0, 0, 0)" }
-        })
-    );
+    panel.add(year_label);
     panel.add(active_year);
     panel.add(controls_label);
     panel.add(select);
