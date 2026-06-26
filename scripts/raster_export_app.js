@@ -44,9 +44,9 @@ var HII_IC = ee
 
 var PROBABILITY_INTEGRITY_START_YEAR = 2001;
 var PROBABILITY_INTEGRITY_END_YEAR = 2020;
-var GRASSLAND_PROB_THRESHOLD = 60;
-var HMI_THRESHOLD = 0.1;
-var HII_THRESHOLD = 0.08;
+var DEFAULT_GRASSLAND_PROB_THRESHOLD = 60;
+var DEFAULT_HMI_THRESHOLD = 0.1;
+var DEFAULT_HII_THRESHOLD = 0.08;
 
 function yearRangePrompt(startYear, endYear) {
     return startYear + "-" + endYear;
@@ -96,34 +96,39 @@ function noTwoConsecutiveZerosFromAnnualBinary(buildAnnualBinary) {
         .eq(1);
 }
 
-var PROBABILITY_INTEGRITY_INDEX = noTwoConsecutiveZerosFromAnnualBinary(
-    function (year) {
+function defaultReferenceThresholds() {
+    return {
+        grasslandProbability: DEFAULT_GRASSLAND_PROB_THRESHOLD,
+        hmi: DEFAULT_HMI_THRESHOLD,
+        hii: DEFAULT_HII_THRESHOLD
+    };
+}
+
+function probabilityIntegrityIndex(year, thresholds) {
+    thresholds = thresholds || defaultReferenceThresholds();
+    return noTwoConsecutiveZerosFromAnnualBinary(function (year) {
         return GRASSLAND_PROB_IC.filterDate(
             ee.Date.fromYMD(year, 1, 1),
             ee.Date.fromYMD(year.add(1), 1, 1)
         )
             .first()
             .select(0)
-            .gte(GRASSLAND_PROB_THRESHOLD);
-    }
-)
-    .and(
-        noTwoConsecutiveZerosFromAnnualBinary(function (year) {
-            return HII_IC.filterDate(
-                ee.Date.fromYMD(year, 1, 1),
-                ee.Date.fromYMD(year.add(1), 1, 1)
-            )
-                .mean()
-                .divide(7000)
-                .lt(HII_THRESHOLD);
-        })
-    )
-    .and(HMI_IMG.lte(HMI_THRESHOLD))
-    .selfMask()
-    .toByte();
-
-function probabilityIntegrityIndex() {
-    return PROBABILITY_INTEGRITY_INDEX;
+            .gte(thresholds.grasslandProbability);
+    })
+        .and(
+            noTwoConsecutiveZerosFromAnnualBinary(function (year) {
+                return HII_IC.filterDate(
+                    ee.Date.fromYMD(year, 1, 1),
+                    ee.Date.fromYMD(year.add(1), 1, 1)
+                )
+                    .mean()
+                    .divide(7000)
+                    .lt(thresholds.hii);
+            })
+        )
+        .and(HMI_IMG.lte(thresholds.hmi))
+        .selfMask()
+        .toByte();
 }
 
 function yearStart(year) {
@@ -388,8 +393,8 @@ function positiveSnowDepthMean(dataset, bandName) {
 function makeLayerDefinition(name, build, yearRange, exportScale) {
     return {
         name: name,
-        build: function (year) {
-            return ee.Image(build(year)).rename("B0");
+        build: function (year, thresholds) {
+            return ee.Image(build(year, thresholds)).rename("B0");
         },
         yearRange: yearRange,
         exportScale: exportScale
@@ -685,8 +690,8 @@ function regionOutline(regionDefinition) {
     });
 }
 
-function referenceSitesLayer(region) {
-    return probabilityIntegrityIndex().eq(1).selfMask().clip(region);
+function referenceSitesLayer(region, thresholds) {
+    return probabilityIntegrityIndex(null, thresholds).eq(1).selfMask().clip(region);
 }
 
 function slug(text) {
@@ -712,6 +717,30 @@ var controlPanel = ui.Panel({
 var title = ui.Label({
     value: "Response Variable Raster Exports",
     style: { fontWeight: "bold", fontSize: "18px", margin: "0 0 8px 0" }
+});
+
+var grasslandProbabilityInput = ui.Textbox({
+    value: String(DEFAULT_GRASSLAND_PROB_THRESHOLD),
+    style: { width: "120px" },
+    onChange: function () {
+        updateMapLayers();
+    }
+});
+
+var hmiThresholdInput = ui.Textbox({
+    value: String(DEFAULT_HMI_THRESHOLD),
+    style: { width: "120px" },
+    onChange: function () {
+        updateMapLayers();
+    }
+});
+
+var hiiThresholdInput = ui.Textbox({
+    value: String(DEFAULT_HII_THRESHOLD),
+    style: { width: "120px" },
+    onChange: function () {
+        updateMapLayers();
+    }
 });
 
 var yearInput = ui.Textbox({
@@ -743,12 +772,20 @@ function fieldRow(label, widget) {
         widgets: [
             ui.Label({
                 value: label,
-                style: { width: "90px", margin: "4px 8px 4px 0" }
+                style: { width: "150px", margin: "4px 8px 4px 0" }
             }),
             widget
         ],
         layout: ui.Panel.Layout.flow("horizontal")
     });
+}
+
+function referenceThresholds() {
+    return {
+        grasslandProbability: parseFloat(grasslandProbabilityInput.getValue()),
+        hmi: parseFloat(hmiThresholdInput.getValue()),
+        hii: parseFloat(hiiThresholdInput.getValue())
+    };
 }
 
 var layerRows = [];
@@ -805,12 +842,13 @@ function queueDriveExports() {
     var year = parseInt(yearInput.getValue(), 10);
     var regionDefinition = regionDefinitionByName(regionSelect.getValue());
     var region = regionGeometry(regionDefinition);
+    var thresholds = referenceThresholds();
     var selectedLayers = selectedLayerDefinitions();
 
     selectedLayers.forEach(function (layerDefinition) {
         var name = exportName(layerDefinition, year, regionDefinition);
         Export.image.toDrive({
-            image: layerDefinition.build(year).clip(region),
+            image: layerDefinition.build(year, thresholds).clip(region),
             description: name,
             folder: driveFolderInput.getValue(),
             fileNamePrefix: name,
@@ -833,9 +871,10 @@ map.setControlVisibility({ mapTypeControl: true });
 function updateMapLayers() {
     var regionDefinition = regionDefinitionByName(regionSelect.getValue());
     var region = regionGeometry(regionDefinition);
+    var thresholds = referenceThresholds();
     map.layers().reset([
         ui.Map.Layer(
-            referenceSitesLayer(region),
+            referenceSitesLayer(region, thresholds),
             { palette: ["003a70"], min: 1, max: 1 },
             "Grassland Reference Sites"
         ),
@@ -845,6 +884,15 @@ function updateMapLayers() {
 }
 
 controlPanel.add(title);
+controlPanel.add(
+    ui.Label({
+        value: "Reference site thresholds",
+        style: { fontWeight: "bold", margin: "8px 0 4px 0" }
+    })
+);
+controlPanel.add(fieldRow("Grassland prob", grasslandProbabilityInput));
+controlPanel.add(fieldRow("HMI", hmiThresholdInput));
+controlPanel.add(fieldRow("HII", hiiThresholdInput));
 controlPanel.add(fieldRow("Year", yearInput));
 controlPanel.add(fieldRow("Region", regionSelect));
 controlPanel.add(fieldRow("Drive folder", driveFolderInput));
