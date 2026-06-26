@@ -390,14 +390,16 @@ function positiveSnowDepthMean(dataset, bandName) {
     };
 }
 
-function makeLayerDefinition(name, build, yearRange, exportScale) {
+function makeLayerDefinition(name, build, yearRange, exportScale, exportOptions) {
+    exportOptions = exportOptions || {};
     return {
         name: name,
         build: function (year, thresholds) {
             return ee.Image(build(year, thresholds)).rename("B0");
         },
         yearRange: yearRange,
-        exportScale: exportScale
+        exportScale: exportScale,
+        isReferenceLayer: exportOptions.isReferenceLayer === true
     };
 }
 
@@ -406,7 +408,8 @@ var LAYER_DEFINITIONS = [
         "Grassland Reference Sites",
         probabilityIntegrityIndex,
         YEAR_PROMPT_GRASSLAND_REFERENCE,
-        30
+        30,
+        { isReferenceLayer: true }
     ),
     makeLayerDefinition(
         "NDVI 95th percentile across the year",
@@ -701,12 +704,24 @@ function slug(text) {
         .replace(/^_+|_+$/g, "");
 }
 
-function exportName(layerDefinition, year, regionDefinition) {
+function thresholdNameParts(thresholds) {
     return [
+        slug("grassland_prob_" + thresholds.grasslandProbability),
+        slug("hmi_" + thresholds.hmi),
+        slug("hii_" + thresholds.hii)
+    ];
+}
+
+function exportName(layerDefinition, year, regionDefinition, thresholds) {
+    var parts = [
         slug(layerDefinition.name),
-        String(year),
+        slug("year_" + year),
         slug(regionDefinition.name)
-    ].join("_");
+    ];
+    if (layerDefinition.isReferenceLayer) {
+        parts = parts.concat(thresholdNameParts(thresholds));
+    }
+    return parts.join("_");
 }
 
 var controlPanel = ui.Panel({
@@ -846,7 +861,12 @@ function queueDriveExports() {
     var selectedLayers = selectedLayerDefinitions();
 
     selectedLayers.forEach(function (layerDefinition) {
-        var name = exportName(layerDefinition, year, regionDefinition);
+        var name = exportName(
+            layerDefinition,
+            year,
+            regionDefinition,
+            thresholds
+        );
         Export.image.toDrive({
             image: layerDefinition.build(year, thresholds).clip(region),
             description: name,
