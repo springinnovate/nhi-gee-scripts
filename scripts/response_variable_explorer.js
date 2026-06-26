@@ -10,7 +10,9 @@ function getAnalysisWindow(year) {
   };
 }
 
-function refreshAnalysis() {
+function refreshAnalysis(yearValue) {
+  state.year = parseInt(yearValue, 10);
+
   var window = getAnalysisWindow(state.year);
 
   Map.layers().reset();
@@ -24,8 +26,7 @@ function refreshAnalysis() {
 }
 
 function handleYearChange(value) {
-  state.year = parseInt(value, 10);
-  refreshAnalysis();
+  refreshAnalysis(value);
 }
 
 var controlPanel = ui.Panel({
@@ -78,4 +79,4 @@ ui.root.insert(0, controlPanel);
 Map.setOptions('SATELLITE');
 Map.setCenter(0, 15, 2);
 
-refreshAnalysis();
+refreshAnalysis(yearInput.getValue());
