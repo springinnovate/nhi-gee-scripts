@@ -2,18 +2,6 @@ var state = {
   year: 2024
 };
 
-function parseYear(value) {
-  var normalizedValue = String(value).trim();
-
-  if (!/^\d{4}$/.test(normalizedValue)) {
-    return null;
-  }
-
-  var year = parseInt(normalizedValue, 10);
-
-  return year;
-}
-
 function getAnalysisWindow(year) {
   return {
     start: ee.Date.fromYMD(year, 1, 1),
@@ -36,14 +24,7 @@ function refreshAnalysis() {
 }
 
 function handleYearChange(value) {
-  var year = parseYear(value);
-
-  if (year === null) {
-    statusLabel.setValue('Enter a four-digit year.');
-    return;
-  }
-
-  state.year = year;
+  state.year = parseInt(value, 10);
   refreshAnalysis();
 }
 
