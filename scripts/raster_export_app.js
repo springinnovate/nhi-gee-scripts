@@ -1,6 +1,8 @@
 var DEFAULTYEAR = "2005";
 var DEFAULT_DRIVE_FOLDER = "gee_response_variables";
 var DEFAULT_MAX_PIXELS = 1e13;
+var EXPORT_CRS = "EPSG:4326";
+var EXPORT_SCALE_METERS = 500;
 
 var LANDSAT_NDVI_DATASET = "LANDSAT/COMPOSITES/C02/T1_L2_8DAY_NDVI";
 var MODIS_PHENOLOGY_DATASET = "MODIS/061/MCD12Q2";
@@ -685,6 +687,10 @@ function regionGeometry(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).geometry();
 }
 
+function exportRegion(region) {
+    return region.bounds(1, ee.Projection(EXPORT_CRS));
+}
+
 function regionOutline(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).style({
         color: "ffff00",
@@ -768,6 +774,11 @@ var driveFolderInput = ui.Textbox({
     style: { width: "260px" }
 });
 
+var exportGridLabel = ui.Label({
+    value: String(EXPORT_SCALE_METERS) + " m, " + EXPORT_CRS,
+    style: { margin: "4px 0" }
+});
+
 var regionSelect = ui.Select({
     items: regionNames(),
     value: REGION_DEFINITIONS[0].name,
@@ -828,8 +839,8 @@ LAYER_DEFINITIONS.forEach(function (layerDefinition) {
                     style: { width: "120px", margin: "0 8px 0 0" }
                 }),
                 ui.Label({
-                    value: String(layerDefinition.exportScale) + " m",
-                    style: { width: "70px", margin: "0" }
+                    value: String(EXPORT_SCALE_METERS) + " m",
+                    style: { width: "80px", margin: "0" }
                 })
             ],
             layout: ui.Panel.Layout.flow("horizontal")
@@ -857,6 +868,7 @@ function queueDriveExports() {
     var year = parseInt(yearInput.getValue(), 10);
     var regionDefinition = regionDefinitionByName(regionSelect.getValue());
     var region = regionGeometry(regionDefinition);
+    var regionBounds = exportRegion(region);
     var thresholds = referenceThresholds();
     var selectedLayers = selectedLayerDefinitions();
 
@@ -872,8 +884,9 @@ function queueDriveExports() {
             description: name,
             folder: driveFolderInput.getValue(),
             fileNamePrefix: name,
-            region: region,
-            scale: layerDefinition.exportScale,
+            region: regionBounds,
+            crs: EXPORT_CRS,
+            scale: EXPORT_SCALE_METERS,
             maxPixels: DEFAULT_MAX_PIXELS
         });
     });
@@ -916,6 +929,7 @@ controlPanel.add(fieldRow("HII", hiiThresholdInput));
 controlPanel.add(fieldRow("Year", yearInput));
 controlPanel.add(fieldRow("Region", regionSelect));
 controlPanel.add(fieldRow("Drive folder", driveFolderInput));
+controlPanel.add(fieldRow("Export grid", exportGridLabel));
 controlPanel.add(
     ui.Panel({
         widgets: [
@@ -943,8 +957,8 @@ controlPanel.add(
                 style: { width: "120px", fontWeight: "bold", margin: "0 8px 4px 0" }
             }),
             ui.Label({
-                value: "Scale",
-                style: { width: "70px", fontWeight: "bold", margin: "0 0 4px 0" }
+                value: "Export",
+                style: { width: "80px", fontWeight: "bold", margin: "0 0 4px 0" }
             })
         ],
         layout: ui.Panel.Layout.flow("horizontal")
