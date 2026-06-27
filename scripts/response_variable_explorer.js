@@ -348,7 +348,7 @@ function distanceToStreams(year) {
 }
 
 function soilOrganicCarbon10cm(year) {
-    return ee.Image(ISRIC_SOC_DATASET).select("b10").divide(10);
+    return ee.Image(ISRIC_SOC_DATASET).select("soc_5-15cm_mean").divide(10);
 }
 
 function gldasAnnualSoilMoisture(year) {
