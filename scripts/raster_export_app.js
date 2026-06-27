@@ -789,7 +789,7 @@ var regionSelect = ui.Select({
 });
 
 var statusLabel = ui.Label({
-    value: "Exports will be sent to your authorized Google Drive.",
+    value: "Exports will use the selected export year and be sent to your authorized Google Drive.",
     style: { margin: "8px 0 0 0" }
 });
 
@@ -892,7 +892,10 @@ function queueDriveExports() {
     });
 
     statusLabel.setValue(
-        selectedLayers.length + " Drive export task(s) queued in the Tasks tab."
+        selectedLayers.length +
+            " Drive export task(s) queued for export year " +
+            year +
+            " in the Tasks tab."
     );
 }
 
@@ -926,7 +929,7 @@ controlPanel.add(
 controlPanel.add(fieldRow("Grassland prob", grasslandProbabilityInput));
 controlPanel.add(fieldRow("HMI", hmiThresholdInput));
 controlPanel.add(fieldRow("HII", hiiThresholdInput));
-controlPanel.add(fieldRow("Year", yearInput));
+controlPanel.add(fieldRow("Export year", yearInput));
 controlPanel.add(fieldRow("Region", regionSelect));
 controlPanel.add(fieldRow("Drive folder", driveFolderInput));
 controlPanel.add(fieldRow("Export grid", exportGridLabel));
