@@ -698,7 +698,8 @@ function exportImage(image, region) {
             crs: EXPORT_CRS,
             scale: EXPORT_SCALE_METERS
         })
-        .clip(exportGeometry);
+        .clip(exportGeometry)
+        .toFloat();
 }
 
 function regionOutline(regionDefinition) {
