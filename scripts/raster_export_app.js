@@ -691,6 +691,16 @@ function exportRegion(region) {
     return region.bounds(1, ee.Projection(EXPORT_CRS));
 }
 
+function exportImage(image, region) {
+    var exportGeometry = region.transform(ee.Projection(EXPORT_CRS), 1);
+    return image
+        .reproject({
+            crs: EXPORT_CRS,
+            scale: EXPORT_SCALE_METERS
+        })
+        .clip(exportGeometry);
+}
+
 function regionOutline(regionDefinition) {
     return ee.FeatureCollection(regionDefinition.assetId).style({
         color: "ffff00",
@@ -880,7 +890,7 @@ function queueDriveExports() {
             thresholds
         );
         Export.image.toDrive({
-            image: layerDefinition.build(year, thresholds).clip(region),
+            image: exportImage(layerDefinition.build(year, thresholds), region),
             description: name,
             folder: driveFolderInput.getValue(),
             fileNamePrefix: name,
